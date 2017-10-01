@@ -1,23 +1,42 @@
 # -*- coding: utf-8 -*-
 
+from datetime import datetime
+
 from django.contrib.auth.models import User
 from django.http import Http404
 from django.shortcuts import render
 
 from espnff import League
 
-import json
-
 from rest_framework import authentication, permissions
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-def createLeagueObject(leagueId, year):
-  return League(leagueId, year)
+#############################
+#
+# General Utils
+#
+#############################
+def getCurrentYear():
+  now = datetime.now()
+
+  if (now.month < 8):
+    return now.year - 1
+
+  return now.year
 
 def toDict(obj):
   return obj.__dict__
+
+#############################
+#
+# ESPN FF API Utils
+#
+#############################
+
+def createLeagueObject(leagueId, year=getCurrentYear()):
+  return League(leagueId, year)
 
 def serializeBasicTeam(team):
   if not team:
@@ -31,10 +50,6 @@ def serializeBasicTeam(team):
     'owner': team.owner
   }
 
-def serializeTeam(team):
-  team.schedule = list(map(lambda t: serializeBasicTeam(t), team.schedule))
-  return toDict(team)
-
 def serializeMatchup(matchup):
   matchup.home_team = serializeBasicTeam(matchup.home_team)
   matchup.away_team = serializeBasicTeam(matchup.away_team)
@@ -43,15 +58,25 @@ def serializeMatchup(matchup):
 def serializeRankings(rankings):
   return map(lambda pair: { 'score': float(pair[0]), 'team': serializeBasicTeam(pair[1]) }, rankings)
 
+def serializeTeam(team):
+  team.schedule = list(map(lambda t: serializeBasicTeam(t), team.schedule))
+  return toDict(team)
+
+#############################
+#
+# Views
+#
+#############################
+
 @api_view(['GET'])
-def getTeams(request, leagueId, year):
+def getTeams(request, leagueId, year=getCurrentYear()):
   league = createLeagueObject(leagueId, year)
   teams = list(map(lambda team: serializeTeam(team), league.teams))
   response = { 'teams': teams }
   return Response(response)
 
 @api_view(['GET'])
-def getTeam(request, leagueId, year, teamId):
+def getTeam(request, leagueId, teamId, year=getCurrentYear()):
   league = createLeagueObject(leagueId, year)
   team = None
   for t in league.teams:
@@ -64,14 +89,86 @@ def getTeam(request, leagueId, year, teamId):
   return Response(serializeTeam(team))
 
 @api_view(['GET'])
-def getPowerRankings(request, leagueId, year):
+def getPowerRankings(request, leagueId, year=getCurrentYear()):
   league = createLeagueObject(leagueId, year)
   week = league.teams[0].wins + league.teams[0].losses
   rankings = league.power_rankings(week=week)
   return Response({ 'rankings': serializeRankings(rankings), 'week': week })
 
 @api_view(['GET'])
-def getScoreboard(request, leagueId, year):
+def getScoreboard(request, leagueId, year=getCurrentYear()):
   league = createLeagueObject(leagueId, year)
   scoreboard = map(lambda matchup: serializeMatchup(matchup), league.scoreboard())
   return Response({ 'scoreboard': scoreboard })
+
+@api_view(['GET'])
+def getTeamHistory(request, leagueId, teamId):
+  error = None
+  teamHistory = {
+    'losses': 0,
+    'ties': 0,
+    'wins': 0,
+    'matchupHistory': {}
+  }
+  year = getCurrentYear()
+
+  while (not error):
+    try:
+      league = createLeagueObject(leagueId, year)
+    except:
+      error = True
+    else:
+      team = None
+      for t in league.teams:
+        if t.team_id == int(teamId):
+          team = t
+
+      if (team):
+        for week in list(range(1, 18)):
+          try:
+            scoreboard = league.scoreboard(week=week)
+          except:
+            break
+          else:
+            matchup = None
+            opponentOwner = None
+            opponentId = None
+            opponentSide = None
+            side = None
+            for m in scoreboard:
+              if (m.home_team.team_id == int(teamId)):
+                matchup = m
+                side = 'home'
+                opponentOwner = m.away_team.owner
+                opponentId = str(m.away_team.team_id)
+                opponentSide = 'away'
+              elif (m.away_team.team_id == int(teamId)):
+                matchup = m
+                side = 'away'
+                opponentOwner = m.home_team.owner
+                opponentId = str(m.home_team.team_id)
+                opponentSide = 'home'
+
+            if (matchup and matchup.data['winner'] != 'undecided'):
+              if (not opponentId in teamHistory['matchupHistory']):
+                teamHistory['matchupHistory'][opponentId] = {
+                  'opponentName': opponentOwner,
+                  'losses': 0,
+                  'ties': 0,
+                  'wins': 0
+                }
+
+              if (matchup.data['winner'] == side):
+                teamHistory['wins'] += 1
+                teamHistory['matchupHistory'][opponentId]['wins'] += 1
+              elif (matchup.data['winner'] == opponentSide):
+                teamHistory['losses'] += 1
+                teamHistory['matchupHistory'][opponentId]['losses'] += 1
+              else:
+                teamHistory['ties'] += 1
+                teamHistory['matchupHistory'][opponentId]['ties'] += 1
+
+      year -= 1
+
+  return Response(teamHistory)
+

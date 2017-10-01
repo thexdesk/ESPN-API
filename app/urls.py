@@ -7,4 +7,10 @@ urlpatterns = [
   url(r'^(?P<leagueId>[0-9]+)/(?P<year>[0-9]+)/teams/(?P<teamId>[0-9]+)/$', views.getTeam),
   url(r'^(?P<leagueId>[0-9]+)/(?P<year>[0-9]+)/power-rankings/$', views.getPowerRankings),
   url(r'^(?P<leagueId>[0-9]+)/(?P<year>[0-9]+)/scoreboard/$', views.getScoreboard),
+
+  url(r'^(?P<leagueId>[0-9]+)/teams/$', views.getTeams),
+  url(r'^(?P<leagueId>[0-9]+)/teams/(?P<teamId>[0-9]+)/$', views.getTeam),
+  url(r'^(?P<leagueId>[0-9]+)/teams/(?P<teamId>[0-9]+)/history/$', views.getTeamHistory),
+  url(r'^(?P<leagueId>[0-9]+)/power-rankings/$', views.getPowerRankings),
+  url(r'^(?P<leagueId>[0-9]+)/scoreboard/$', views.getScoreboard),
 ]

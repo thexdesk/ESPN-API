@@ -1,5 +1,6 @@
 README.rst
 setup.cfg
+setup.py
 espnff/__init__.py
 espnff/exception.py
 espnff/league.py
