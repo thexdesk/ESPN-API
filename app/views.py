@@ -97,6 +97,9 @@ def threadedBuildHistoryFromMatchups(league, teamHistory, teamId):
         try:
           if (not opponentId in teamHistory['matchupHistory']):
             teamHistory['matchupHistory'][opponentId] = {
+              'margin': 0,
+              'marginOfDefeat': 0,
+              'marginOfVictory': 0,
               'opponentName': opponentOwner,
               'losses': 0,
               'ties': 0,
@@ -105,10 +108,18 @@ def threadedBuildHistoryFromMatchups(league, teamHistory, teamId):
 
           if (matchup.data['winner'] == side):
             teamHistory['wins'] += 1
+            teamHistory['margin'] += abs(m.home_score - m.away_score)
+            teamHistory['marginOfVictory'] += abs(m.home_score - m.away_score)
             teamHistory['matchupHistory'][opponentId]['wins'] += 1
+            teamHistory['matchupHistory'][opponentId]['margin'] += abs(m.home_score - m.away_score)
+            teamHistory['matchupHistory'][opponentId]['marginOfVictory'] += abs(m.home_score - m.away_score)
           elif (matchup.data['winner'] == opponentSide):
             teamHistory['losses'] += 1
+            teamHistory['margin'] += (-1 * abs(m.home_score - m.away_score))
+            teamHistory['marginOfDefeat'] += (-1 * abs(m.home_score - m.away_score))
             teamHistory['matchupHistory'][opponentId]['losses'] += 1
+            teamHistory['matchupHistory'][opponentId]['margin'] += (-1 * abs(m.home_score - m.away_score))
+            teamHistory['matchupHistory'][opponentId]['marginOfDefeat'] += (-1 * abs(m.home_score - m.away_score))
           else:
             teamHistory['ties'] += 1
             teamHistory['matchupHistory'][opponentId]['ties'] += 1
@@ -158,6 +169,9 @@ def getScoreboard(request, leagueId, year=getCurrentYear()):
 def getTeamHistory(request, leagueId, teamId):
   error = None
   teamHistory = {
+    'margin': 0,
+    'marginOfDefeat': 0,
+    'marginOfVictory': 0,
     'losses': 0,
     'ties': 0,
     'wins': 0,
@@ -173,6 +187,9 @@ def getTeamHistory(request, leagueId, teamId):
     except:
       error = True
     else:
+      if (int(leagueId) == 336358 and year == 2010):
+        error = True
+        continue;
       team = None
       for t in league.teams:
         if t.team_id == int(teamId):
@@ -187,6 +204,18 @@ def getTeamHistory(request, leagueId, teamId):
 
   for thread in listOfThreads:
     thread.join()
+
+  games = teamHistory['wins'] + teamHistory['losses'] + teamHistory['ties']
+  teamHistory['margin'] = round(teamHistory['margin'] / games, 2)
+  teamHistory['marginOfDefeat'] = round(teamHistory['marginOfDefeat'] / teamHistory['losses'], 2)
+  teamHistory['marginOfVictory'] = round(teamHistory['marginOfVictory'] / teamHistory['wins'], 2)
+
+  for matchup in teamHistory['matchupHistory']:
+    matchup = teamHistory['matchupHistory'][matchup]
+    games = matchup['wins'] + matchup['losses'] + matchup['ties']
+    matchup['margin'] = round(matchup['margin'] / games, 2)
+    matchup['marginOfDefeat'] = round(matchup['marginOfDefeat'] / matchup['losses'], 2)
+    matchup['marginOfVictory'] = round(matchup['marginOfVictory'] / matchup['wins'], 2)
 
   return Response(teamHistory)
 
