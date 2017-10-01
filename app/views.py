@@ -13,11 +13,15 @@ from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from threading import Lock, Thread
+
 #############################
 #
 # General Utils
 #
 #############################
+mutex = Lock()
+
 def getCurrentYear():
   now = datetime.now()
 
@@ -61,6 +65,55 @@ def serializeRankings(rankings):
 def serializeTeam(team):
   team.schedule = list(map(lambda t: serializeBasicTeam(t), team.schedule))
   return toDict(team)
+
+def threadedBuildHistoryFromMatchups(league, teamHistory, teamId):
+  for week in list(range(1, 18)):
+    try:
+      scoreboard = league.scoreboard(week=week)
+    except:
+      break
+    else:
+      matchup = None
+      opponentOwner = None
+      opponentId = None
+      opponentSide = None
+      side = None
+      for m in scoreboard:
+        if (m.home_team.team_id == int(teamId)):
+          matchup = m
+          side = 'home'
+          opponentOwner = m.away_team.owner
+          opponentId = str(m.away_team.team_id)
+          opponentSide = 'away'
+        elif (m.away_team.team_id == int(teamId)):
+          matchup = m
+          side = 'away'
+          opponentOwner = m.home_team.owner
+          opponentId = str(m.home_team.team_id)
+          opponentSide = 'home'
+
+      if (matchup and matchup.data['winner'] != 'undecided'):
+        mutex.acquire()
+        try:
+          if (not opponentId in teamHistory['matchupHistory']):
+            teamHistory['matchupHistory'][opponentId] = {
+              'opponentName': opponentOwner,
+              'losses': 0,
+              'ties': 0,
+              'wins': 0
+            }
+
+          if (matchup.data['winner'] == side):
+            teamHistory['wins'] += 1
+            teamHistory['matchupHistory'][opponentId]['wins'] += 1
+          elif (matchup.data['winner'] == opponentSide):
+            teamHistory['losses'] += 1
+            teamHistory['matchupHistory'][opponentId]['losses'] += 1
+          else:
+            teamHistory['ties'] += 1
+            teamHistory['matchupHistory'][opponentId]['ties'] += 1
+        finally:
+          mutex.release()
 
 #############################
 #
@@ -112,6 +165,8 @@ def getTeamHistory(request, leagueId, teamId):
   }
   year = getCurrentYear()
 
+  listOfThreads = []
+
   while (not error):
     try:
       league = createLeagueObject(leagueId, year)
@@ -124,51 +179,14 @@ def getTeamHistory(request, leagueId, teamId):
           team = t
 
       if (team):
-        for week in list(range(1, 18)):
-          try:
-            scoreboard = league.scoreboard(week=week)
-          except:
-            break
-          else:
-            matchup = None
-            opponentOwner = None
-            opponentId = None
-            opponentSide = None
-            side = None
-            for m in scoreboard:
-              if (m.home_team.team_id == int(teamId)):
-                matchup = m
-                side = 'home'
-                opponentOwner = m.away_team.owner
-                opponentId = str(m.away_team.team_id)
-                opponentSide = 'away'
-              elif (m.away_team.team_id == int(teamId)):
-                matchup = m
-                side = 'away'
-                opponentOwner = m.home_team.owner
-                opponentId = str(m.home_team.team_id)
-                opponentSide = 'home'
-
-            if (matchup and matchup.data['winner'] != 'undecided'):
-              if (not opponentId in teamHistory['matchupHistory']):
-                teamHistory['matchupHistory'][opponentId] = {
-                  'opponentName': opponentOwner,
-                  'losses': 0,
-                  'ties': 0,
-                  'wins': 0
-                }
-
-              if (matchup.data['winner'] == side):
-                teamHistory['wins'] += 1
-                teamHistory['matchupHistory'][opponentId]['wins'] += 1
-              elif (matchup.data['winner'] == opponentSide):
-                teamHistory['losses'] += 1
-                teamHistory['matchupHistory'][opponentId]['losses'] += 1
-              else:
-                teamHistory['ties'] += 1
-                teamHistory['matchupHistory'][opponentId]['ties'] += 1
+        t = Thread(target = threadedBuildHistoryFromMatchups, args=(league, teamHistory, teamId))
+        t.start()
+        listOfThreads.append(t)
 
       year -= 1
+
+  for thread in listOfThreads:
+    thread.join()
 
   return Response(teamHistory)
 
