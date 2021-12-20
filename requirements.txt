@@ -11,7 +11,7 @@ idna==2.6
 jsonpickle==0.9.5
 Markdown==2.6.7
 matplotlib==1.5.3
-numpy==1.11.2
+numpy==1.22.0rc1
 psycopg2==2.7.3.1
 pyparsing==2.1.10
 python-dateutil==2.6.0
